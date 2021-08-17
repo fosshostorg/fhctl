@@ -131,7 +131,7 @@ func init() {
 // SSH into VM
 func sshVM(vm aarch64.VM) {
 	if ipv6able() {
-		cmd := exec.Command("/usr/bin/ssh", strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
+		cmd := exec.Command("ssh", strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -145,7 +145,7 @@ func sshVM(vm aarch64.VM) {
 
 	} else {
 		fmt.Printf("establishing connection to %v through a SSH jump server...\n\n", strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
-		cmd := exec.Command("/usr/bin/ssh", "-J", fmt.Sprintf("jump@%v%v.infra.aarch64.com", vm.PoP, vm.Host), strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
+		cmd := exec.Command("ssh", "-J", fmt.Sprintf("jump@%v%v.infra.aarch64.com", vm.PoP, vm.Host), strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr

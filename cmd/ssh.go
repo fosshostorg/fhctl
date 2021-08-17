@@ -23,35 +23,151 @@ package cmd
 
 import (
 	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"strings"
 
+	"github.com/jcdea/aarch64-client-go"
+	"github.com/jcdea/fhctl/check"
+	"github.com/jcdea/fhctl/request"
+	"github.com/jcdea/fhctl/types"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
 )
 
 // sshCmd represents the ssh command
 var sshCmd = &cobra.Command{
 	Use:   "ssh",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Short: "SSH into a vm",
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("ssh called")
+		// We already check if user is signed in at GetProjects
+
+		if len(args) != 0 && args[0] != "" {
+			err := sshCmdWithAlias(args)
+			if err != nil {
+				println(fmt.Sprintf("No alias found for\"%v\"\n", args[0]))
+			}
+		}
+
+		projectResp, err := request.GetProjects()
+		check.CheckErr(err, "Failed to retrieve project list")
+
+		var projectNames []string
+		for _, item := range projectResp.Projects {
+			projectNames = append(projectNames, item.Name)
+		}
+
+		check.CheckErr(err, "")
+		selectProject := promptui.Select{
+			Label: "Select project",
+			Items: projectNames,
+		}
+		selectedProjectIndex, _, err := selectProject.Run()
+		check.CheckErr(err, "")
+
+		selectedProject := projectResp.Projects[selectedProjectIndex]
+
+		var VMNames []string
+		for _, item := range selectedProject.VMs {
+			VMNames = append(VMNames, item.Id)
+
+		}
+
+		check.CheckErr(err, "")
+		selectVM := promptui.Select{
+			Label: "Select VM",
+			Items: VMNames,
+		}
+		selectedVMIndex, _, err := selectVM.Run()
+		check.CheckErr(err, "")
+
+		sshVM(selectedProject.VMs[selectedVMIndex])
+
 	},
+}
+
+// Search for alias, then ssh if alias is found.
+// if not found: returns not found error
+func sshCmdWithAlias(args []string) error {
+	var vms []aarch64.VM
+
+	project, err := types.SearchProjectAlias(args[0])
+	if err != nil {
+		return err
+	}
+
+	println(fmt.Sprintf("Using alias %v=%v\n", args[0], project.Id))
+
+	projectResp, err := request.GetProjects()
+	check.CheckErr(err, "Failed to retrieve project list")
+
+	for _, item := range projectResp.Projects {
+		if item.Id == project.Id {
+			vms = item.VMs
+
+		}
+
+	}
+	var VMNames []string
+	for _, item := range vms {
+		VMNames = append(VMNames, item.Id)
+	}
+
+	selectVM := promptui.Select{Label: "Select VM", Items: VMNames}
+	index, _, err := selectVM.Run()
+	check.CheckErr(err, "")
+
+	sshVM(vms[index])
+	return nil
+
 }
 
 func init() {
 	rootCmd.AddCommand(sshCmd)
+}
 
-	// Here you will define your flags and configuration settings.
+// SSH into VM
+func sshVM(vm aarch64.VM) {
+	if ipv6able() {
+		cmd := exec.Command("/usr/bin/ssh", strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// sshCmd.PersistentFlags().String("foo", "", "A help for foo")
+		err := cmd.Run()
+		if err != nil {
+			if err.Error() != "exit status 130" {
+				check.CheckErr(err, "")
+			}
+		}
 
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// sshCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	} else {
+		fmt.Printf("establishing connection to %v through a SSH jump server...\n\n", strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
+		cmd := exec.Command("/usr/bin/ssh", "-J", fmt.Sprintf("jump@%v%v.infra.aarch64.com", vm.PoP, vm.Host), strings.Split(fmt.Sprintf("root@%v", vm.Address), "/")[0])
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		err := cmd.Run() // add error checking
+
+		if err != nil {
+			if err.Error() != "exit status 130" {
+				check.CheckErr(err, "")
+			}
+		}
+
+	}
+
+}
+
+// Does the client support ipv6?
+func ipv6able() bool {
+	_, err := net.Dial("tcp", "2606:4700:4700::1111")
+	if err != nil {
+		println("ipv6 not available")
+		return false
+	}
+	return true
 }

@@ -19,12 +19,28 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
-package main
+package cmd
 
 import (
-	"github.com/jcdea/fhctl/cmd"
+	"github.com/spf13/cobra"
 )
 
-func main() {
-	cmd.Execute()
+// projectCmd represents the project command
+var projectCmd = &cobra.Command{
+	Use:   "project",
+	Short: "Commands for managing projects",
+}
+
+func init() {
+	rootCmd.AddCommand(projectCmd)
+
+	// Here you will define your flags and configuration settings.
+
+	// Cobra supports Persistent Flags which will work for this command
+	// and all subcommands, e.g.:
+	// projectCmd.PersistentFlags().String("foo", "", "A help for foo")
+
+	// Cobra supports local flags which will only run when this command
+	// is called directly, e.g.:
+	// projectCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

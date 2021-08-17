@@ -22,8 +22,11 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"fmt"
+	"io/fs"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -32,11 +35,12 @@ import (
 
 var cfgFile string
 
+const API_URL = "https://console.aarch64.com/api"
+
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "fhctl",
 	Short: "Administer the Fosshost & aarch64.com infrastructure from the terminal",
-	Long:  `Administer the Fosshost & aarch64.com infrastructure from the terminal`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	// Run: func(cmd *cobra.Command, args []string) { },
@@ -49,6 +53,19 @@ func Execute() {
 }
 
 func init() {
+
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGINT)
+	go func() {
+		sig := <-signalChannel
+		switch sig {
+		case os.Interrupt:
+			os.Exit(0)
+		case syscall.SIGINT:
+			os.Exit(0)
+		}
+	}()
+
 	cobra.OnInitialize(initConfig)
 
 	// Here you will define your flags and configuration settings.
@@ -57,9 +74,6 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.fhctl.yaml)")
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -67,6 +81,7 @@ func initConfig() {
 	if cfgFile != "" {
 		// Use config file from the flag.
 		viper.SetConfigFile(cfgFile)
+
 	} else {
 		// Find home directory.
 		home, err := os.UserHomeDir()
@@ -74,14 +89,42 @@ func initConfig() {
 
 		// Search config in home directory with name ".fhctl" (without extension).
 		viper.AddConfigPath(home)
-		viper.SetConfigType("yaml")
+		viper.SetConfigType("json")
 		viper.SetConfigName(".fhctl")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
 
 	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+	viper.ReadInConfig()
+
+}
+
+func createOrWriteConfig(mode fs.FileMode) (err error) {
+	if viper.ConfigFileUsed() == "" {
+		home, err := os.UserHomeDir()
+		cobra.CheckErr(err)
+
+		configPath := filepath.Join(home, "/fhctl.json")
+
+		_, err = os.Stat(configPath)
+		if !os.IsExist(err) {
+			if _, err := os.Create(configPath); err != nil {
+				cobra.CheckErr(err)
+			}
+		}
+		if err := viper.SafeWriteConfig(); err != nil {
+			cobra.CheckErr(err)
+		}
+
+		err = os.Chmod(viper.ConfigFileUsed(), mode)
+		if err != nil {
+			return err
+		}
+	} else {
+		if err = viper.WriteConfig(); err != nil {
+			cobra.CheckErr(err)
+		}
 	}
+	return nil
 }

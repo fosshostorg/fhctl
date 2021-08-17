@@ -22,23 +22,95 @@ THE SOFTWARE.
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"net/mail"
+	"os"
 
+	"github.com/jcdea/aarch64-client-go"
+	"github.com/jcdea/fhctl/check"
+	"github.com/jcdea/fhctl/spinner"
+	"github.com/manifoldco/promptui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // loginCmd represents the login command
 var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Login to Fosshost",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("login called")
+		validate := func(email string) error {
+			_, err := mail.ParseAddress(email)
+			if err != nil {
+				return errors.New("invalid email")
+			}
+			return nil
+		}
+		if viper.ConfigFileUsed() != "" {
+			choose := promptui.Select{
+				Label: fmt.Sprintf("Configuration file found at %v", viper.ConfigFileUsed()),
+				Items: []string{"use existing configuration", "overwite config file"},
+			}
+			i, _, err := choose.Run()
+			check.CheckErr(err, "")
+
+			switch i {
+			case 0:
+				println("using existing configuration.")
+				os.Exit(0)
+			}
+
+		}
+
+		emailPrompt := promptui.Prompt{
+			Label:    "Your Email",
+			Validate: validate,
+		}
+		email, err := emailPrompt.Run()
+		check.CheckErr(err, "Prompt failed")
+
+		PwPrompt := promptui.Prompt{
+			Label: "Password",
+			Mask:  '*',
+		}
+		pw, err := PwPrompt.Run()
+
+		check.CheckErr(err, "Prompt failed")
+
+		s, err := spinner.SpinnerWithMsg(spinner.SpinnerMsgs{Suffix: "Signing in",
+			SuccessMsg: "Successfully logged in!\n",
+			FailMsg:    "Failed to sign in. Please try again.\n"})
+		check.CheckErr(err, "")
+
+		s.Start()
+
+		client := aarch64.NewClient("")
+
+		resp, err := client.Login(email, pw)
+
+		check.CheckErr(err, "")
+
+		if resp.Meta.Success {
+
+			s.Stop()
+			configWriteSpinner, err := spinner.SpinnerWithMsg(spinner.SpinnerMsgs{
+				Suffix:     "Writing configuration file",
+				SuccessMsg: "Successfully saved configuration file!\n"})
+			check.CheckErr(err, "")
+			configWriteSpinner.Start()
+
+			viper.Set("email", email)
+			viper.Set("key", resp.Key)
+			createOrWriteConfig(0600)
+
+			configWriteSpinner.Stop()
+
+		} else {
+			s.StopFail()
+		}
+
 	},
 }
 

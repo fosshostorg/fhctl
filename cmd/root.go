@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/jcdea/fhctl/check"
 	"github.com/spf13/cobra"
 
 	"github.com/spf13/viper"
@@ -65,6 +66,12 @@ func init() {
 			os.Exit(0)
 		}
 	}()
+
+	home, err := os.UserHomeDir()
+	check.CheckErr(err, "")
+
+	viper.Set("ssh.privKeyPath", filepath.Join(home, "/.ssh/id_ed25519_fhctl"))
+	viper.Set("ssh.pubKeyPath", filepath.Join(home, "/.ssh/id_ed25519_fhctl.pub"))
 
 	cobra.OnInitialize(initConfig)
 
@@ -105,7 +112,7 @@ func createOrWriteConfig(mode fs.FileMode) (err error) {
 		home, err := os.UserHomeDir()
 		cobra.CheckErr(err)
 
-		configPath := filepath.Join(home, "/fhctl.json")
+		configPath := filepath.Join(home, "/.fhctl.json")
 
 		_, err = os.Stat(configPath)
 		if !os.IsExist(err) {

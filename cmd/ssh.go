@@ -22,7 +22,6 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"bufio"
 	"crypto/ed25519"
 	"encoding/pem"
 	"errors"
@@ -31,6 +30,7 @@ import (
 	"log"
 
 	"net"
+
 	"os"
 	"strings"
 	"time"
@@ -45,6 +45,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 // sshCmd represents the ssh command
@@ -171,24 +172,43 @@ func sshVM(vm aarch64.VM) error {
 		println("i am starting the shell")
 
 		session.Stderr = os.Stderr
+		session.Stdin = os.Stdin
 		session.Stdout = os.Stdout
-		session.RequestPty("xterm", 40, 40, ssh.TerminalModes{
-			ssh.TTY_OP_ISPEED: 14400, // input speed = 14.4kbaud
-			ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
-		})
 
-		in, _ := session.StdinPipe()
+		fd := int(os.Stdin.Fd())
+		state, err := terminal.MakeRaw(fd)
+		if err != nil {
+			return fmt.Errorf("terminal make raw: %s", err)
+		}
+		defer terminal.Restore(fd, state)
+
+		w, h, err := terminal.GetSize(fd)
+		if err != nil {
+			return fmt.Errorf("terminal get size: %s", err)
+		}
+
+		modes := ssh.TerminalModes{
+			ssh.ECHO:          1,
+			ssh.TTY_OP_ISPEED: 14400,
+			ssh.TTY_OP_OSPEED: 14400,
+		}
+
+		term := os.Getenv("TERM")
+		if term == "" {
+			term = "xterm-256color"
+		}
+		if err := session.RequestPty(term, h, w, modes); err != nil {
+			return fmt.Errorf("session xterm: %s", err)
+		}
+
 		// Forward user commands to the remote shell
 		if err := session.Shell(); err != nil {
 
 			check.CheckErr(err, "")
 			log.Fatalf("failed to start shell: %s", err)
 		}
-
-		for {
-			reader := bufio.NewReader(os.Stdin)
-			str, _ := reader.ReadString('\n')
-			fmt.Fprint(in, str)
+		if err := session.Wait(); err != nil {
+			panic(err)
 		}
 
 	}
